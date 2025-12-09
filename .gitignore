@@ -1,0 +1,17 @@
+# Environnement virtuel
+venv/
+.env
+
+# Fichier de mémoire des clips
+history.txt
+
+# Fichiers Python compilés
+__pycache__/
+*.pyc
+
+# Fichiers vidéos temporaires
+*.mp4
+*.mov
+
+# Divers
+.DS_Store
