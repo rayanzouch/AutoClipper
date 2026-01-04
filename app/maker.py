@@ -1,7 +1,7 @@
 import os
 
 # 🔧 Indiquer à MoviePy où se trouve ImageMagick (AVANT d'importer moviepy)
-os.environ["IMAGEMAGICK_BINARY"] = r"C:\Program Files\ImageMagick-7.1.2-Q16\magick.exe"
+os.environ["IMAGEMAGICK_BINARY"] = r"C:\Program Files\ImageMagick-7.1.2-Q16-HDRI\magick.exe"
 
 import PIL.Image
 # FIX pour la compatibilité Pillow récent et MoviePy
@@ -14,6 +14,8 @@ from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip, clips_ar
 import cv2
 import numpy as np
 import whisper
+import mediapipe as mp
+
 
 # --- CONFIGURATION GLOBALE ---
 
@@ -34,6 +36,7 @@ CAPTION_COLORS = [
 ]
 
 _whisper_model = None  # cache modèle whisper
+_mp_face_detection = None  # cache modèle MediaPipe
 
 
 # ------------------ WHISPER ------------------ #
@@ -45,6 +48,18 @@ def get_whisper_model():
         print("🧠 Chargement du modèle Whisper (small)...")
         _whisper_model = whisper.load_model("small")  # "tiny", "base", "small", ...
     return _whisper_model
+
+def get_mediapipe_detector():
+    """Charge le détecteur MediaPipe une seule fois (lazy load)."""
+    global _mp_face_detection
+    if _mp_face_detection is None:
+        print("🧠 Chargement du modèle MediaPipe Face Detection...")
+        mp_face_detection_module = mp.solutions.face_detection
+        _mp_face_detection = mp_face_detection_module.FaceDetection(
+            model_selection=1,  # 0 = courte distance (webcam), 1 = longue distance (meilleur pour Twitch)
+            min_detection_confidence=0.2
+        )
+    return _mp_face_detection
 
 
 def transcribe_with_whisper(video_path):
@@ -60,13 +75,11 @@ def transcribe_with_whisper(video_path):
     """
     print("🧠 Whisper : Transcription en cours...")
     model = get_whisper_model()
-
     result = model.transcribe(
         video_path,
         language=None,          # auto FR/EN
         word_timestamps=True    # IMPORTANT pour les timings précis
     )
-
     segments = []
     for seg in result["segments"]:
         words = []
@@ -222,56 +235,109 @@ def make_subtitle_clips(captions, video_size):
 # ------------------ DÉTECTION VISAGE ------------------ #
 
 def detect_face_box(video_path):
-    """Détecte le visage et retourne un cadre SERRÉ."""
-    print("🤖 IA (OpenCV) : Recherche du visage...")
-
-    face_cascade = cv2.CascadeClassifier(
-        cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-    )
+    """Détecte le visage en priorité dans les coins (layout Twitch typique)."""
+    print("🤖 IA (MediaPipe) : Recherche du visage...")
 
     video_capture = cv2.VideoCapture(video_path)
     fps = video_capture.get(cv2.CAP_PROP_FPS) or 25
-
-    # Taille vidéo (avant release)
     video_w = int(video_capture.get(cv2.CAP_PROP_FRAME_WIDTH)) or 1920
     video_h = int(video_capture.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 1080
+    total_frames = int(video_capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    duration = total_frames / fps
 
-    # On regarde à 5 secondes pour éviter les intros
-    frame_to_check = int(fps * 5)
-    video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_to_check)
+    print(f"📊 Vidéo : {video_w}x{video_h}, {duration:.1f}s")
 
-    success, frame = video_capture.read()
+    face_detection = get_mediapipe_detector()
+
+    # ZONES À SCANNER (coins typiques de webcam)
+    # Format : (nom, x_début, y_début, largeur, hauteur)
+    search_zones = [
+        ("Coin Haut-Droite", int(video_w * 0.7), 0, int(video_w * 0.3), int(video_h * 0.35)),
+        ("Coin Bas-Droite", int(video_w * 0.7), int(video_h * 0.65), int(video_w * 0.3), int(video_h * 0.35)),
+        ("Coin Haut-Gauche", 0, 0, int(video_w * 0.3), int(video_h * 0.35)),
+        ("Coin Bas-Gauche", 0, int(video_h * 0.65), int(video_w * 0.3), int(video_h * 0.35)),
+        ("Image Complète", 0, 0, video_w, video_h),  # Fallback si pas dans les coins
+    ]
+
+    best_face = None
+    max_confidence = 0
+    best_zone = None
+
+    # Tester à plusieurs moments (5s, 10s, 15s)
+    test_times = [5, 10, 15] if duration > 15 else [int(duration / 2)]
+
+    for time_sec in test_times:
+        if time_sec >= duration:
+            continue
+            
+        frame_num = int(time_sec * fps)
+        video_capture.set(cv2.CAP_PROP_POS_FRAMES, frame_num)
+        success, frame = video_capture.read()
+
+        if not success:
+            continue
+
+        print(f"\n🔍 Analyse frame à {time_sec}s...")
+
+        # Tester chaque zone
+        for zone_name, x, y, w, h in search_zones:
+            # Extraire la zone à analyser
+            zone_frame = frame[y:y+h, x:x+w]
+            
+            # Convertir en RGB pour MediaPipe
+            rgb_zone = cv2.cvtColor(zone_frame, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(rgb_zone)
+
+            if results.detections:
+                print(f"   ✅ {zone_name} : {len(results.detections)} visage(s)")
+                
+                for detection in results.detections:
+                    confidence = detection.score[0]
+                    
+                    if confidence > max_confidence:
+                        bboxC = detection.location_data.relative_bounding_box
+                        
+                        # IMPORTANT : Coordonnées relatives à la ZONE, 
+                        # il faut les convertir en coordonnées globales
+                        face_x = int(bboxC.xmin * w) + x  # + décalage de la zone
+                        face_y = int(bboxC.ymin * h) + y  # + décalage de la zone
+                        face_w = int(bboxC.width * w)
+                        face_h = int(bboxC.height * h)
+
+                        max_confidence = confidence
+                        best_face = (face_x, face_y, face_w, face_h)
+                        best_zone = zone_name
+                        
+                        print(f"      → Confiance : {confidence:.1%}")
+            else:
+                print(f"   ❌ {zone_name} : aucun visage")
+
     video_capture.release()
 
-    if not success:
-        print("⚠️ IA : Erreur lecture vidéo. Fallback.")
+    if best_face is None or max_confidence < 0.3:
+        print(f"\n⚠️ Aucun visage détecté (meilleure conf: {max_confidence:.1%}). Fallback.")
         return FALLBACK_X, FALLBACK_Y, FALLBACK_W, FALLBACK_H
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(30, 30)
-    )
+    x, y, w, h = best_face
+    print(f"\n✅ Visage trouvé dans : {best_zone}")
+    print(f"   Position : X={x}, Y={y}, W={w}, H={h}")
+    print(f"   Confiance : {max_confidence:.1%}")
 
-    if len(faces) == 0:
-        print("⚠️ IA : Aucun visage. Fallback.")
-        return FALLBACK_X, FALLBACK_Y, FALLBACK_W, FALLBACK_H
-
-    largest_face = max(faces, key=lambda rect: rect[2] * rect[3])
-    x, y, w, h = largest_face
-    print(f"✅ IA : Visage trouvé ! (X:{x}, Y:{y})")
-
-    padding_w = int(w * 0.15)  # +15% largeur
-    padding_h = int(h * 0.30)  # +30% hauteur
+    # PADDING
+    padding_w = int(w * 1.5)
+    padding_h = int(h * 1.8)
 
     final_x = max(0, x - padding_w // 2)
     final_y = max(0, y - padding_h // 3)
     final_w = min(video_w - final_x, w + padding_w)
     final_h = min(video_h - final_y, h + padding_h)
 
-    print(f"📐 Cadrage optimisé : X={final_x}, Y={final_y}, W={final_w}, H={final_h}")
+    MIN_CAM_SIZE = 200
+    if final_w < MIN_CAM_SIZE or final_h < MIN_CAM_SIZE:
+        print(f"⚠️ Zone trop petite ({final_w}x{final_h}). Fallback.")
+        return FALLBACK_X, FALLBACK_Y, FALLBACK_W, FALLBACK_H
+
+    print(f"📐 Cadrage final : X={final_x}, Y={final_y}, W={final_w}, H={final_h}")
     return final_x, final_y, final_w, final_h
 
 
