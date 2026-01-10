@@ -25,6 +25,7 @@ from collections import Counter
 # IMPORTS ET CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import re
 import numpy as np
 import cv2
 import requests
@@ -88,7 +89,7 @@ class Config:
     
     # Whisper
     WHISPER_MODEL: str = "large"  # Options: tiny, base, small, medium, large
-    SUBTITLES_ENABLED: bool = True  # Sous-titres activés
+    SUBTITLES_ENABLED: bool = True  
 
     # YOLO (détection de personnes)
     YOLO_MODEL: str = "yolov8n.pt"  # nano = rapide, autres: yolov8s.pt, yolov8m.pt
@@ -141,12 +142,13 @@ def get_font(size: int) -> ImageFont.FreeTypeFont:
         project_dir = os.path.dirname(script_dir)
 
         font_paths = [
-            # Obelix Pro Bold (prioritaire)
-            os.path.join(project_dir, "obelix-pro", "ObelixProB-cyr.ttf"),
-            os.path.join(project_dir, "obelix-pro", "ObelixPro-cyr.ttf"),
+            # TEST: Impact en priorité
+            "C:/Windows/Fonts/impact.ttf",
+            # Obelix Pro Bold (désactivé temporairement)
+            # os.path.join(project_dir, "obelix-pro", "ObelixProB-cyr.ttf"),
+            # os.path.join(project_dir, "obelix-pro", "ObelixPro-cyr.ttf"),
             # Fallbacks Windows
             "C:/Windows/Fonts/arialbd.ttf",
-            "C:/Windows/Fonts/impact.ttf",
         ]
 
         font = None
@@ -167,6 +169,122 @@ def get_font(size: int) -> ImageFont.FreeTypeFont:
         _font_cache[size] = font
 
     return _font_cache[size]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TWITCH BRANDING (Logo + Username)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def extract_twitch_username(url: str) -> Optional[str]:
+    """
+    Extrait le nom d'utilisateur Twitch depuis l'URL d'un clip
+
+    Formats supportés:
+    - https://www.twitch.tv/username/clip/ClipName
+    - https://clips.twitch.tv/ClipName (nécessite API, retourne None)
+    - https://twitch.tv/username/clip/ClipName
+    """
+    if not url:
+        return None
+
+    # Format: twitch.tv/username/clip/...
+    match = re.search(r'twitch\.tv/([^/]+)/clip/', url, re.IGNORECASE)
+    if match:
+        username = match.group(1)
+        # Ignorer "clips" si c'est le sous-domaine
+        if username.lower() != 'clips':
+            return username
+
+    return None
+
+
+def create_twitch_logo(size: int = 40) -> Image.Image:
+    """
+    Charge le vrai logo Twitch (Glitch) depuis le fichier assets/twitch_logo.png
+    et le redimensionne à la taille demandée.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(script_dir)
+    logo_path = os.path.join(project_dir, "assets", "twitch_logo.png")
+
+    try:
+        logo = Image.open(logo_path).convert('RGBA')
+        logo = logo.resize((size, size), Image.Resampling.LANCZOS)
+        return logo
+    except Exception as e:
+        print(f"⚠️ Impossible de charger le logo Twitch : {e}")
+        # Fallback : carré violet simple
+        img = Image.new('RGBA', (size, size), (145, 70, 255, 255))
+        return img
+
+
+def render_twitch_overlay(
+    username: str,
+    cam_width: int,
+    cam_height: int,
+    logo_size: int = 36,
+    font_size: int = 28
+) -> np.ndarray:
+    """
+    Crée l'overlay Twitch avec logo + username pour la zone webcam
+
+    Positionnement: bas gauche de la zone webcam
+    Style: fond semi-transparent avec logo Twitch + @username
+    """
+    # Créer une image de la taille de la webcam
+    img = Image.new('RGBA', (cam_width, cam_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # Police pour le username
+    try:
+        font = get_font(font_size)
+    except:
+        font = ImageFont.load_default()
+
+    # Texte à afficher
+    display_text = f"@{username}" if not username.startswith('@') else username
+
+    # Calculer les dimensions
+    text_bbox = draw.textbbox((0, 0), display_text, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+
+    # Dimensions du badge complet
+    padding_x = 12
+    padding_y = 8
+    spacing = 8  # Espace entre logo et texte
+
+    badge_width = logo_size + spacing + text_width + padding_x * 2
+    badge_height = max(logo_size, text_height) + padding_y * 2
+
+    # Position: bas gauche avec marge
+    margin = 15
+    badge_x = margin
+    badge_y = cam_height - badge_height - margin
+
+    # Dessiner le fond semi-transparent (noir avec opacité)
+    bg_color = (0, 0, 0, 180)
+    draw.rounded_rectangle(
+        [badge_x, badge_y, badge_x + badge_width, badge_y + badge_height],
+        radius=8,
+        fill=bg_color
+    )
+
+    # Ajouter le logo Twitch
+    twitch_logo = create_twitch_logo(logo_size)
+    logo_x = badge_x + padding_x
+    logo_y = badge_y + (badge_height - logo_size) // 2
+    img.paste(twitch_logo, (logo_x, logo_y), twitch_logo)
+
+    # Ajouter le username
+    text_x = logo_x + logo_size + spacing
+    text_y = badge_y + (badge_height - text_height) // 2 - 2  # Petit ajustement vertical
+
+    # Texte en blanc
+    draw.text((text_x, text_y), display_text, font=font, fill=(255, 255, 255, 255))
+
+    return np.array(img)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TÉLÉCHARGEMENT
@@ -718,16 +836,22 @@ def calculate_adaptive_bitrate(duration: float, target_mb: float = CONFIG.TARGET
 
     return f"{bitrate // 1000}k"
 
-def create_tiktok(input_path: str, output_path: str) -> bool:
+def create_tiktok(input_path: str, output_path: str, twitch_url: str = None) -> bool:
     """
     Pipeline complet de création de vidéo TikTok
-    
+
     Étapes :
     1. Détection de visage (multi-frame)
     2. Crop et assemblage webcam + gameplay
-    3. Transcription Whisper
-    4. Rendu sous-titres Hormozi
-    5. Export avec compression adaptative
+    3. Ajout overlay Twitch (logo + username)
+    4. Transcription Whisper
+    5. Rendu sous-titres Hormozi
+    6. Export avec compression adaptative
+
+    Args:
+        input_path: Chemin vers la vidéo source
+        output_path: Chemin de sortie
+        twitch_url: URL du clip Twitch (pour extraire le username)
     """
     print("\n" + "═" * 60)
     print("🎬 DÉMARRAGE DU MONTAGE TIKTOK")
@@ -810,19 +934,41 @@ def create_tiktok(input_path: str, output_path: str) -> bool:
         
         # ── ASSEMBLAGE ──
         print("🔧 Assemblage webcam + gameplay...")
-        
+
         # Positionner les clips
         cam_clip = cam_clip.set_position((0, 0))
         game_clip = game_clip.set_position((0, target_cam_h))
-        
+
         # Fond noir de sécurité
         background = ColorClip(
             size=(CONFIG.FINAL_W, CONFIG.FINAL_H),
             color=(0, 0, 0)
         ).set_duration(duration)
-        
+
+        # ── OVERLAY TWITCH ──
+        twitch_overlay_clip = None
+        if twitch_url:
+            twitch_username = extract_twitch_username(twitch_url)
+            if twitch_username:
+                print(f"📺 Ajout overlay Twitch : @{twitch_username}")
+                twitch_overlay = render_twitch_overlay(
+                    username=twitch_username,
+                    cam_width=CONFIG.FINAL_W,
+                    cam_height=target_cam_h
+                )
+                twitch_overlay_clip = ImageClip(twitch_overlay, ismask=False, transparent=True)
+                twitch_overlay_clip = twitch_overlay_clip.set_duration(duration)
+                twitch_overlay_clip = twitch_overlay_clip.set_position((0, 0))
+            else:
+                print("⚠️ Impossible d'extraire le username Twitch de l'URL")
+
+        # Composer les clips
+        clips_to_compose = [background, cam_clip, game_clip]
+        if twitch_overlay_clip:
+            clips_to_compose.append(twitch_overlay_clip)
+
         base_video = CompositeVideoClip(
-            [background, cam_clip, game_clip],
+            clips_to_compose,
             size=(CONFIG.FINAL_W, CONFIG.FINAL_H)
         )
         
@@ -861,14 +1007,17 @@ def create_tiktok(input_path: str, output_path: str) -> bool:
         bitrate = calculate_adaptive_bitrate(duration)
         print(f"   Bitrate adaptatif : {bitrate}")
         
+        # Utiliser NVENC (GPU NVIDIA) pour un export 5-10x plus rapide
         final_clip.write_videofile(
             output_path,
-            codec='libx264',
+            codec='h264_nvenc',          # Encodeur GPU NVIDIA
             audio_codec='aac',
-            audio_bitrate='192k',  # Audio haute qualité
+            audio_bitrate='192k',
             bitrate=bitrate,
-            preset='slow',         # Meilleure compression = meilleure qualité
-            fps=clip.fps or 30,    # Conserve le FPS original
+            preset='fast',               # NVENC presets: slow, medium, fast, hp, hq, bd, ll, llhq, llhp, lossless
+            ffmpeg_params=['-rc', 'vbr', '-cq', '23'],  # VBR avec qualité constante
+            fps=30,                      # Forcer 30fps (plus rapide que 60fps)
+            threads=8,                   # Paralléliser l'envoi des frames
             verbose=False,
             logger=None
         )

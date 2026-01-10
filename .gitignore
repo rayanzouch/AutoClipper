@@ -15,3 +15,5 @@ __pycache__/
 
 # Divers
 .DS_Store
+nul
+temp/
