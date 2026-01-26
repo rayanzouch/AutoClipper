@@ -24,7 +24,7 @@ STREAMABLE_USER = os.getenv('STREAMABLE_USER')
 STREAMABLE_PASS = os.getenv('STREAMABLE_PASS')
 
 # Seuil pour utiliser Streamable (Discord limite à 25 Mo)
-DISCORD_FILE_LIMIT_MB = 25
+DISCORD_FILE_LIMIT_MB = 20
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

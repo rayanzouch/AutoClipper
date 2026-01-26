@@ -38,7 +38,7 @@ from dotenv import load_dotenv
 # Charger les variables d'environnement
 load_dotenv()
 ASSEMBLYAI_API_KEY = os.getenv('ASSEMBLYAI_API_KEY')
-
+print(ASSEMBLYAI_API_KEY)
 # MoviePy imports
 from moviepy.editor import (
     VideoFileClip, AudioFileClip, CompositeVideoClip, 
@@ -143,12 +143,12 @@ def get_font(size: int) -> ImageFont.FreeTypeFont:
 
         font_paths = [
             # TEST: Impact en priorité
-            "C:/Windows/Fonts/impact.ttf",
+            "C:/Windows/Fonts/Bangers-Regularttf",
             # Obelix Pro Bold (désactivé temporairement)
             # os.path.join(project_dir, "obelix-pro", "ObelixProB-cyr.ttf"),
             # os.path.join(project_dir, "obelix-pro", "ObelixPro-cyr.ttf"),
             # Fallbacks Windows
-            "C:/Windows/Fonts/arialbd.ttf",
+            "C:/Windows/Fonts/Bangers-Regular.ttf",
         ]
 
         font = None
