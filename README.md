@@ -2,6 +2,14 @@
 
 Post a Twitch clip in Discord to get a 1080 × 1920 MP4. AutoClipper uses YOLOv8 to locate the webcam, places it above the gameplay, and highlights each spoken word in yellow. Captions have a black outline and a transparent background.
 
+## Before and after
+
+The same six seconds of gameplay, with audio. Click either preview to open the clip.
+
+| Twitch original | AutoClipper output |
+| --- | --- |
+| [![Original widescreen clip](docs/demo/original.jpg)](docs/demo/original.mp4) | [![Vertical clip with captions](docs/demo/vertical.jpg)](docs/demo/vertical.mp4) |
+
 ## Windows setup
 
 Install Python 3.11 and Git. Video export uses H.264 NVENC and requires a compatible NVIDIA GPU and driver. Run these commands in PowerShell.
