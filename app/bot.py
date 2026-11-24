@@ -3,7 +3,7 @@
 BOT DISCORD - MAnaty (AutoClipper)
 ==================================
 Bot Discord qui convertit les clips Twitch en vidéos verticales (format TikTok/Reels).
-Utilise Streamable pour les fichiers > 25 Mo.
+Utilise Streamable en priorité.
 """
 
 import discord
@@ -22,10 +22,6 @@ CHANNEL_OUTPUT = int(os.getenv('CHANNEL_OUTPUT_ID'))
 # Streamable (compte gratuit requis : https://streamable.com)
 STREAMABLE_USER = os.getenv('STREAMABLE_USER')
 STREAMABLE_PASS = os.getenv('STREAMABLE_PASS')
-
-# Seuil pour utiliser Streamable (Discord limite à 25 Mo)
-DISCORD_FILE_LIMIT_MB = 25
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # FONCTION UPLOAD STREAMABLE
@@ -71,48 +67,20 @@ def upload_to_streamable(file_path):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def send_video(channel, file_path, message, twitch_url):
-    """
-    Envoie la vidéo sur Discord.
-    Si le fichier est > 25 Mo, utilise Streamable.
-    """
-    file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-    msg_content = f"**Video prete !**\nSource : {message.author.mention}\nOriginal : <{twitch_url}>"
-
-    # Fichier volumineux → Streamable
-    if file_size_mb > DISCORD_FILE_LIMIT_MB:
-        print(f"Fichier volumineux ({file_size_mb:.1f} Mo), utilisation de Streamable...")
-
-        loop = asyncio.get_event_loop()
-        streamable_url = await loop.run_in_executor(None, upload_to_streamable, file_path)
-
-        if streamable_url:
-            await channel.send(f"{msg_content}\n\n**Video HD** : {streamable_url}")
-            return True
-        else:
-            # Fallback : essayer Discord quand même (échouera si serveur non boosté)
-            print("Streamable echoue, tentative Discord...")
-
-    # Fichier petit ou fallback → Discord direct
-    print(f"Envoi Discord ({file_size_mb:.1f} Mo)...")
-
-    try:
-        await channel.send(
-            content=msg_content,
-            file=discord.File(file_path)
-        )
+    msg_content = f"Vidéo de {message.author.mention} · Original <{twitch_url}>"
+    url = await asyncio.to_thread(upload_to_streamable, file_path)
+    if url:
+        await channel.send(f"{msg_content}\n{url}")
         return True
-
-    except discord.HTTPException as e:
-        if e.status == 413:  # Fichier trop gros
-            print(f"Fichier trop volumineux pour Discord ({file_size_mb:.1f} Mo)")
-            await channel.send(
-                f"{msg_content}\n\n⚠️ Fichier trop volumineux ({file_size_mb:.1f} Mo).\n"
-                f"Configure Streamable dans .env pour les gros fichiers."
-            )
-        else:
-            print(f"Erreur Discord: {e}")
-            await channel.send(f"{msg_content}\n\n⚠️ Erreur lors de l'envoi")
-        return False
+    if os.path.getsize(file_path) <= channel.guild.filesize_limit:
+        attachment = discord.File(file_path)
+        try:
+            await channel.send(content=msg_content, file=attachment)
+        finally:
+            attachment.close()
+        return True
+    await channel.send(f"Envoi Streamable impossible. Vidéo conservée sur le PC du bot : {os.path.basename(file_path)}")
+    return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -129,9 +97,9 @@ async def on_ready():
     print(f'Bot connecte en tant que {client.user} !')
     print(f'Surveillance du salon : {CHANNEL_INPUT}')
     if STREAMABLE_USER and STREAMABLE_PASS:
-        print(f'Streamable : configure (fichiers > {DISCORD_FILE_LIMIT_MB} Mo)')
+        print(f'Streamable : configure pour tous les clips')
     else:
-        print(f'Streamable : non configure (limite Discord {DISCORD_FILE_LIMIT_MB} Mo)')
+        print(f'Streamable : non configure, envoi Discord selon la limite du serveur')
 
 
 @client.event
@@ -153,6 +121,7 @@ async def on_message(message):
                 temp_input = f"raw_{message.id}.mp4"
                 temp_output = f"tiktok_{message.id}.mp4"
 
+                montage_success = send_success = False
                 try:
                     loop = asyncio.get_event_loop()
 
@@ -196,7 +165,9 @@ async def on_message(message):
                     # Nettoyage des fichiers temporaires
                     if os.path.exists(temp_input):
                         os.remove(temp_input)
-                    if os.path.exists(temp_output):
+                    if montage_success and not send_success:
+                        print(f"MP4 conservé : {os.path.abspath(temp_output)}")
+                    elif os.path.exists(temp_output):
                         os.remove(temp_output)
 
 

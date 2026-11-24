@@ -80,7 +80,7 @@ class Config:
     SUBTITLE_DEFAULT_COLOR: str = "#FFFFFF"
     SUBTITLE_HIGHLIGHT_COLOR: str = "#FFFF00"  # Jaune pour le mot actif
     SUBTITLE_STROKE_COLOR: str = "#000000"
-    SUBTITLE_BG_COLOR: Tuple[int, int, int, int] = (0, 0, 0, 180)  # Fond semi-transparent
+    SUBTITLE_BG_COLOR: Tuple[int, int, int, int] = (0, 0, 0, 0)  # Fond transparent
     
     # Compression (optimisé pour Streamable - limite 250 Mo)
     TARGET_SIZE_MB: float = 100.0  # Qualité HD, Streamable gère les gros fichiers
