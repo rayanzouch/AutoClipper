@@ -4,11 +4,13 @@ Post a Twitch clip in Discord to get a 1080 × 1920 MP4. AutoClipper uses YOLOv8
 
 ## Before and after
 
-The same six seconds of gameplay, with audio. Click either preview to open the clip.
+Six seconds from NiceWigg's stream, before and after processing. Click either preview to watch with audio.
 
 | Twitch original | AutoClipper output |
 | --- | --- |
 | [![Original widescreen clip](docs/demo/original.jpg)](docs/demo/original.mp4) | [![Vertical clip with captions](docs/demo/vertical.jpg)](docs/demo/vertical.mp4) |
+
+[Full Twitch clip](https://www.twitch.tv/nicewigg/clip/EphemeralGoldenWatercressAsianGlow-sY96iwjW6gNpzePr) · [Full vertical video](docs/demo/nicewigg-full.mp4)
 
 ## Windows setup
 
