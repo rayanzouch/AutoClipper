@@ -1,31 +1,10 @@
-# AutoClipper - Twitch to TikTok Bot
+# AutoClipper
 
-Bot Discord qui convertit automatiquement les clips Twitch en videos verticales optimisees pour TikTok/Reels/Shorts.
+Post a Twitch clip in Discord to get a 1080 × 1920 MP4. AutoClipper uses YOLOv8 to locate the webcam, places it above the gameplay, and highlights each spoken word in yellow. Captions have a black outline and a transparent background.
 
-## Fonctionnalites
+## Windows setup
 
-- Detecte les liens de clips Twitch dans un salon Discord
-- Telecharge le clip en haute qualite
-- Detecte intelligemment la position de la webcam (YOLO v8)
-- Recadre la video au format 1080x1920 (webcam + gameplay)
-- Genere des sous-titres animes style "Hormozi" (mot par mot)
-- Envoie la version finale sur Discord ou Streamable
-
-## Technologies
-
-| Composant | Technologie |
-|-----------|-------------|
-| Bot | Discord.py |
-| Telechargement | yt-dlp |
-| Montage video | MoviePy + OpenCV |
-| Detection webcam | YOLO v8 (ultralytics) |
-| Transcription | AssemblyAI / OpenAI Whisper |
-| Sous-titres | Pillow (rendu pur Python) |
-| Export | FFmpeg |
-
-## Installation sous Windows
-
-La configuration testée utilise Python 3.11 et une carte NVIDIA avec un pilote compatible NVENC. Le montage exporte en H.264 avec cet encodeur. Dans PowerShell, exécuter ces commandes lors de la première installation.
+Install Python 3.11 and Git. Video export uses H.264 NVENC and requires a compatible NVIDIA GPU and driver. Run these commands in PowerShell.
 
 ```powershell
 git clone https://github.com/rayanzouch/AutoClipper.git
@@ -38,7 +17,7 @@ Copy-Item $ffmpeg .\venv\Scripts\ffmpeg.exe
 
 ## Configuration
 
-Créer un fichier `.env` à la racine du projet. Renseigner le token du bot et les identifiants numériques des deux salons. Activer **Message Content Intent** dans les réglages Discord du bot pour qu’il puisse lire les liens.
+Enable **Message Content Intent** in your Discord bot settings. Create a `.env` file in the project root with your bot token and the numeric IDs of the input and output channels.
 
 ```env
 DISCORD_TOKEN=
@@ -49,42 +28,14 @@ STREAMABLE_PASS=
 ASSEMBLYAI_API_KEY=
 ```
 
-- Pour publier sur Streamable, renseigner l’e-mail du compte dans `STREAMABLE_USER` et son mot de passe dans `STREAMABLE_PASS`.
-- Pour transcrire en local avec Whisper, laisser `ASSEMBLYAI_API_KEY` vide. Si une clé est renseignée, le bot essaie AssemblyAI en premier.
+For Streamable uploads, set `STREAMABLE_USER` to your account email and `STREAMABLE_PASS` to your password. Leave `ASSEMBLYAI_API_KEY` empty to transcribe locally with Whisper. Set it to use AssemblyAI first.
 
-## Utilisation
+## Run
 
-Double-cliquer sur `Demarrer-AutoClipper.cmd` et laisser la fenêtre ouverte. Une fois le bot connecté, poster un lien de la forme `https://www.twitch.tv/nom/clip/identifiant` dans le salon d’entrée.
+Double-click `Demarrer-AutoClipper.cmd` and keep the window open. Post a link like `https://www.twitch.tv/channel/clip/slug` in the input channel. 👀 means the bot picked up the clip. ✅ means it delivered the video.
 
-1. Le bot réagit avec 👀, télécharge le clip et produit une vidéo verticale.
-2. Il tente d’envoyer chaque vidéo sur Streamable et publie le lien dans le salon de sortie.
-3. Si Streamable est indisponible ou non configuré, le bot joint le MP4 lorsque sa taille respecte la limite du serveur Discord.
-4. Après une livraison réussie, le bot réagit avec ✅. Si la livraison échoue après le montage, le MP4 reste sur le PC. La console indique son chemin.
+The bot uploads each clip to Streamable and posts the link in the output channel. If the upload fails or Streamable credentials are missing, it sends the MP4 directly when it fits the server's upload limit. If delivery fails, the bot keeps the finished MP4 and prints its path in the console.
 
-## Architecture
-
-```
-AutoClipper/
-├── app/
-│   ├── bot.py          # Bot Discord (point d'entree)
-│   ├── maker.py        # Pipeline de traitement video
-│   └── yolov8n.pt      # Modele YOLO pour detection
-├── obelix-pro/         # Polices pour sous-titres
-├── Demarrer-AutoClipper.cmd  # Lanceur Windows
-├── requirements.txt
-├── .env                # Configuration (a creer)
-└── CLAUDE.md           # Documentation technique
-```
-
-## Pipeline de traitement
-
-1. **Telechargement** - yt-dlp recupere le clip Twitch
-2. **Detection webcam** - YOLO analyse plusieurs frames et vote sur la position
-3. **Montage** - Webcam (35%) + Gameplay (65%) assembles verticalement
-4. **Transcription** - AssemblyAI ou Whisper genere les timestamps des mots
-5. **Sous-titres** - Texte blanc à contour noir sur fond transparent. Le mot prononcé apparaît en jaune.
-6. **Export** - Compression adaptative ciblant ~100 Mo
-
-## Licence
+## License
 
 MIT
